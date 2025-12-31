@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>3D Rubik's Cube Solver</title>
+<style>
+  :root { --size:200px; --face:200px; --st:64px; --gap:0px; }
+  body { background:#0f0f0f; color:#fff; font-family:Arial,Helvetica,sans-serif; text-align:center; margin:0; padding:18px; }
+  h1 { color:#00ffae; margin:6px 0 14px; }
+  .scene { width:280px; height:280px; margin:18px auto; perspective:900px; cursor:grab; }
+  .scene:active { cursor:grabbing; }
+  .cube { width:var(--face); height:var(--face); position:relative; transform-style:preserve-3d; margin:0 auto; }
+  .face { position:absolute; width:var(--face); height:var(--face); display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:var(--gap); border:2px solid #222; box-sizing:border-box; }
+  .sticker { border:1px solid #333; width:100%; height:100%; box-sizing:border-box; cursor:pointer; }
+  .front  { transform: translateZ(100px); }
+  .back   { transform: rotateY(180deg) translateZ(100px); }
+  .right  { transform: rotateY(90deg) translateZ(100px); }
+  .left   { transform: rotateY(-90deg) translateZ(100px); }
+  .top    { transform: rotateX(90deg) translateZ(100px); }
+  .bottom { transform: rotateX(-90deg) translateZ(100px); }
+
+  .palette { display:flex; justify-content:center; gap:10px; margin:12px 0; }
+  .color { width:30px; height:30px; border-radius:5px; border:2px solid #888; cursor:pointer; box-sizing:border-box; }
+  .color.selected { border:3px solid #fff; }
+  .white{ background:white } .red{ background:red } .green{ background:green }
+  .blue{ background:blue } .orange{ background:orange } .yellow{ background:yellow }
+
+  #controls { margin:12px 0; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  button, select { padding:8px 12px; border-radius:6px; border:none; background:#00ffae; color:#111; cursor:pointer; font-weight:600; }
+  button.secondary { background:#444; color:#fff; }
+  button:disabled { background:#666; cursor:not-allowed; }
+  #solutionBox { margin-top:12px; background:#111; padding:10px 12px; border-radius:8px; display:inline-block; min-width:320px; text-align:left; }
+  #cubeStringBox { margin-top:10px; color:#0ff; font-family:monospace; white-space:pre-wrap; word-break:break-all; }
+  #status { font-size:0.9rem; color:#ccc; margin-top:6px; }
+  
+  .solution-output { 
+    background: #1a1a1a; 
+    padding: 15px; 
+    border-radius: 5px; 
+    margin: 10px 0; 
+    border-left: 4px solid #00ffae;
+  }
+  .solution-moves { 
+    font-family: monospace; 
+    font-size: 1.1em; 
+    color: #00ffae;
+    word-break: break-word;
+  }
+  .move-count {
+    color: #4ECDC4;
+    font-weight: bold;
+  }
+  
+  #arduinoPanel { background: #1a1a1a; padding: 15px; border-radius: 8px; margin: 10px 0; }
+  .arduino-controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+  .status-connected { color: #4ECDC4; }
+  .status-disconnected { color: #ff6b6b; }
+  
+  .step-list { 
+    margin: 15px 0; 
+    max-height: 300px; 
+    overflow-y: auto;
+    background: #2a2a2a;
+    padding: 10px;
+    border-radius: 5px;
+  }
+  .step-item {
+    padding: 8px;
+    margin: 5px 0;
+    background: #333;
+    border-radius: 4px;
+    border-left: 3px solid #00ffae;
+  }
+  .step-item.active {
+    background: #1a3a1a;
+    border-left: 3px solid #4ECDC4;
+  }
+  .step-number {
+    font-weight: bold;
+    color: #4ECDC4;
+    margin-right: 10px;
+  }
+  .step-description {
+    color: #fff;
+  }
+  
+  .led-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin: 15px 0;
+    padding: 15px;
+    background: #2a2a2a;
+    border-radius: 8px;
+  }
+  
+  .progress-info {
+    margin: 10px 0;
+    padding: 10px;
+    background: #1a1a1a;
+    border-radius: 5px;
+    font-size: 0.9em;
+  }
+  
+  .led-legend {
+    background: #2a2a2a;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+    text-align: left;
+  }
+  .legend-title {
+    color: #00ffae;
+    margin-bottom: 10px;
+    font-weight: bold;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    margin: 8px 0;
+    padding: 5px;
+  }
+  .legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    margin-right: 10px;
+    border: 1px solid #555;
+  }
+  .legend-text {
+    color: #fff;
+    font-size: 0.9em;
+  }
+  .blink-demo {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    background: #4ECDC4;
+    border-radius: 3px;
+    margin: 0 5px;
+    animation: none;
+  }
+  .blink-1 { animation: blink1 2s infinite; }
+  .blink-2 { animation: blink2 2s infinite; }
+  .blink-3 { animation: blink3 2s infinite; }
+  
+  @keyframes blink1 {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  @keyframes blink2 {
+    0%, 100% { opacity: 1; }
+    25%, 75% { opacity: 0; }
+  }
+  @keyframes blink3 {
+    0%, 100% { opacity: 1; }
+    16%, 50%, 83% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+  <h1>3D Rubik's Cube Solver</h1>
+
+  <div class="scene" id="scene">
+    <div class="cube" id="cube" aria-hidden="true"></div>
+  </div>
+
+  <div class="palette" id="palette">
+    <div class="color white selected" data-color="white" title="white"></div>
+    <div class="color red"   data-color="red"   title="red"></div>
+    <div class="color green" data-color="green" title="green"></div>
+    <div class="color blue"  data-color="blue"  title="blue"></div>
+    <div class="color orange"data-color="orange"title="orange"></div>
+    <div class="color yellow"data-color="yellow"title="yellow"></div>
+  </div>
+
+  <div class="led-legend">
+    <div class="legend-title">🎯 LED Blink Patterns:</div>
+    <div class="legend-item">
+      <div class="blink-demo blink-1"></div>
+      <div class="legend-text"><strong>1 Blink</strong> = Clockwise (90°)</div>
+    </div>
+    <div class="legend-item">
+      <div class="blink-demo blink-2"></div>
+      <div class="legend-text"><strong>2 Blinks</strong> = Counter-clockwise (90°)</div>
+    </div>
+    <div class="legend-item">
+      <div class="blink-demo blink-3"></div>
+      <div class="legend-text"><strong>3 Blinks</strong> = 180° Rotation</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: white;"></div>
+      <div class="legend-text"><strong>White LED</strong> = Face is currently moving</div>
+    </div>
+  </div>
+
+  <div id="arduinoPanel">
+    <h3 style="color: #00ffae; margin-top: 0;">🔌 Arduino Controls</h3>
+    
+    <div id="arduinoStatus" style="margin: 10px 0;">
+        Status: <span id="statusText" class="status-disconnected">Disconnected</span>
+    </div>
+    
+    <div class="arduino-controls">
+        <button id="connectArduino" class="secondary">Connect Arduino</button>
+        <button id="disconnectArduino" class="secondary" disabled>Disconnect</button>
+        <button id="testArduino" class="secondary" disabled>Test LEDs</button>
+        <select id="portSelect" style="padding: 8px; border-radius: 4px; background: #333; color: white; border: 1px solid #555;">
+            <option value="">Auto-detect</option>
+        </select>
+        <button id="refreshPorts" class="secondary">Refresh Ports</button>
+    </div>
+    
+    <label style="display: block; margin: 10px 0;">
+        <input type="checkbox" id="autoSendToArduino"> 
+        Automatically send complete solutions to Arduino
+    </label>
+  </div>
+
+  <div id="controls">
+    <button id="solveBtn">Solve Cube</button>
+    <button id="generateString" class="secondary">Generate Cube String</button>
+    <button id="resetBtn" class="secondary">Reset Cube</button>
+  </div>
+
+  <div id="solutionBox">
+    <strong>Solution Output:</strong>
+    <div id="solutionText">No solution generated yet.</div>
+    <div id="stepList" class="step-list" style="display: none;"></div>
+    
+    <div id="ledControls" class="led-controls" style="display: none;">
+      <button id="prevStep" class="secondary">◀ Previous Step</button>
+      <button id="nextStep" class="secondary">Next Step ▶</button>
+      <button id="autoPlay" class="secondary">Auto Play (2.5s)</button>
+      <button id="stopPlay" class="secondary" style="display: none;">Stop</button>
+    </div>
+    
+    <div id="progressInfo" class="progress-info" style="display: none;">
+      <strong>Current Step: </strong><span id="currentStepDisplay">0</span> of <span id="totalStepsDisplay">0</span>
+      <div id="currentMoveDisplay" style="margin-top: 5px; color: #4ECDC4;"></div>
+    </div>
+    
+    <div id="status"></div>
+    <div id="cubeStringBox"><strong>Cube string:</strong><div id="cubeString">[not generated]</div></div>
+  </div>
+
+<script>
+// Cube state and rendering
+const cubeEl = document.getElementById('cube');
+const scene = document.getElementById('scene');
+const paletteEls = document.querySelectorAll('.color');
+const solutionText = document.getElementById('solutionText');
+const stepList = document.getElementById('stepList');
+const cubeStringEl = document.getElementById('cubeString');
+const statusEl = document.getElementById('status');
+const ledControls = document.getElementById('ledControls');
+const progressInfo = document.getElementById('progressInfo');
+
+let curColor = 'white';
+let faces = {
+  U: Array(9).fill('white'),
+  R: Array(9).fill('red'),
+  F: Array(9).fill('green'),
+  D: Array(9).fill('yellow'),
+  L: Array(9).fill('orange'),
+  B: Array(9).fill('blue'),
+};
+const defaultFaces = JSON.parse(JSON.stringify(faces));
+
+// Step-by-step variables
+let currentMoves = [];
+let currentStep = -1;
+let autoPlayInterval = null;
+let arduinoConnected = false;
+
+const facePositions = [
+  {cls:'front', face:'F'},
+  {cls:'back',  face:'B'},
+  {cls:'right', face:'R'},
+  {cls:'left',  face:'L'},
+  {cls:'top',   face:'U'},
+  {cls:'bottom',face:'D'}
+];
+
+// Color to face name mapping
+const colorToFaceName = {
+  'white': 'White',
+  'red': 'Red',
+  'green': 'Green', 
+  'yellow': 'Yellow',
+  'orange': 'Orange',
+  'blue': 'Blue'
+};
+
+// Move to English translation
+function moveToEnglish(move) {
+  const faceMap = {
+    'U': 'White',
+    'D': 'Yellow', 
+    'L': 'Orange',
+    'R': 'Red',
+    'F': 'Green',
+    'B': 'Blue'
+  };
+  
+  const face = move[0];
+  const faceName = faceMap[face];
+  
+  if (move.endsWith("'")) {
+    return `Turn ${faceName} face 90° counter-clockwise`;
+  } else if (move.endsWith("2")) {
+    return `Turn ${faceName} face 180°`;
+  } else {
+    return `Turn ${faceName} face 90° clockwise`;
+  }
+}
+
+// Color selection
+function selectColor(color) {
+  curColor = color;
+  paletteEls.forEach(p => {
+    if (p.dataset.color === color) {
+      p.classList.add('selected');
+    } else {
+      p.classList.remove('selected');
+    }
+  });
+}
+
+paletteEls.forEach(p => p.addEventListener('click', () => {
+  selectColor(p.dataset.color);
+}));
+
+// Cube rendering
+function renderCube() {
+  cubeEl.innerHTML = '';
+  facePositions.forEach(pos => {
+    const faceDiv = document.createElement('div');
+    faceDiv.className = `face ${pos.cls}`;
+    faceDiv.dataset.face = pos.face;
+    for (let i=0;i<9;i++){
+      const s = document.createElement('div');
+      s.className = 'sticker';
+      s.dataset.face = pos.face;
+      s.dataset.index = i;
+      s.style.background = faces[pos.face][i];
+      s.addEventListener('click', () => {
+        faces[pos.face][i] = curColor;
+        s.style.background = curColor;
+      });
+      faceDiv.appendChild(s);
+    }
+    cubeEl.appendChild(faceDiv);
+  });
+}
+
+// Cube rotation
+let rotX = -20, rotY = 45, dragging=false, lastX=0, lastY=0;
+function updateCubeRotation(){
+  cubeEl.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+}
+updateCubeRotation();
+
+scene.addEventListener('mousedown', e => { 
+  dragging=true; 
+  lastX=e.clientX; 
+  lastY=e.clientY; 
+});
+window.addEventListener('mouseup', ()=> dragging=false);
+window.addEventListener('mousemove', e => {
+  if(!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  rotY += dx*0.5; rotX -= dy*0.5; lastX = e.clientX; lastY = e.clientY;
+  updateCubeRotation();
+});
+
+// Cube string generation
+const colorToLetter={white:'U',red:'R',green:'F',yellow:'D',orange:'L',blue:'B'};
+const facesOrder=['U','R','F','D','L','B'];
+function generateCubeString(){
+  let s=''; for(const f of facesOrder){ faces[f].forEach(c=> s+=(colorToLetter[c]||'?')); }
+  cubeStringEl.textContent=s; 
+  return s;
+}
+
+// Arduino control functions
+async function updateArduinoStatus() {
+    try {
+        const response = await fetch('/arduino/status');
+        const status = await response.json();
+        
+        const statusText = document.getElementById('statusText');
+        const connectBtn = document.getElementById('connectArduino');
+        const disconnectBtn = document.getElementById('disconnectArduino');
+        const testBtn = document.getElementById('testArduino');
+        
+        if (status.connected) {
+            statusText.textContent = `Connected to ${status.port}`;
+            statusText.className = 'status-connected';
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = false;
+            testBtn.disabled = false;
+            arduinoConnected = true;
+        } else {
+            statusText.textContent = 'Disconnected';
+            statusText.className = 'status-disconnected';
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            testBtn.disabled = true;
+            arduinoConnected = false;
+        }
+    } catch (error) {
+        console.error('Status check failed:', error);
+        arduinoConnected = false;
+    }
+}
+
+async function refreshPortList() {
+    try {
+        const response = await fetch('/arduino/ports');
+        const data = await response.json();
+        const select = document.getElementById('portSelect');
+        
+        select.innerHTML = '<option value="">Auto-detect</option>';
+        
+        data.ports.forEach(port => {
+            const option = document.createElement('option');
+            option.value = port;
+            option.textContent = port;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to refresh ports:', error);
+    }
+}
+
+// Step-by-step LED control functions
+async function sendMoveToArduino(move) {
+    if (!arduinoConnected) {
+        statusEl.textContent = 'Arduino not connected - LED simulation only';
+        return false;
+    }
+    
+    try {
+        const response = await fetch('/arduino/send-move', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({move: move})
+        });
+        const result = await response.json();
+        if (result.success) {
+            statusEl.textContent = `✅ LEDs activated: ${moveToEnglish(move)}`;
+        } else {
+            statusEl.textContent = `❌ Failed to send to Arduino: ${result.message}`;
+        }
+        return result.success;
+    } catch (error) {
+        statusEl.textContent = '❌ Connection error - check Arduino';
+        console.error('Failed to send move to Arduino:', error);
+        return false;
+    }
+}
+
+function updateStepDisplay() {
+    document.getElementById('currentStepDisplay').textContent = currentStep + 1;
+    document.getElementById('totalStepsDisplay').textContent = currentMoves.length;
+    
+    if (currentStep >= 0 && currentStep < currentMoves.length) {
+        const currentMove = currentMoves[currentStep];
+        document.getElementById('currentMoveDisplay').textContent = moveToEnglish(currentMove);
+    } else {
+        document.getElementById('currentMoveDisplay').textContent = 'No move selected';
+    }
+    
+    // Update step highlighting
+    const stepItems = stepList.querySelectorAll('.step-item');
+    stepItems.forEach((item, index) => {
+        if (index === currentStep) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+    
+    // Update button states
+    document.getElementById('prevStep').disabled = currentStep <= 0;
+    document.getElementById('nextStep').disabled = currentStep >= currentMoves.length - 1;
+}
+
+async function goToNextStep() {
+    if (currentStep < currentMoves.length - 1) {
+        currentStep++;
+        const move = currentMoves[currentStep];
+        
+        // Send move to Arduino
+        await sendMoveToArduino(move);
+        updateStepDisplay();
+    }
+}
+
+async function goToPrevStep() {
+    if (currentStep > 0) {
+        currentStep--;
+        const move = currentMoves[currentStep];
+        
+        // Send move to Arduino
+        await sendMoveToArduino(move);
+        updateStepDisplay();
+    }
+}
+
+function startAutoPlay() {
+    if (autoPlayInterval) return;
+    
+    document.getElementById('autoPlay').style.display = 'none';
+    document.getElementById('stopPlay').style.display = 'inline-block';
+    
+    autoPlayInterval = setInterval(async () => {
+        if (currentStep < currentMoves.length - 1) {
+            await goToNextStep();
+        } else {
+            stopAutoPlay();
+        }
+    }, 2500); // 2.5 seconds per step
+}
+
+function stopAutoPlay() {
+    if (autoPlayInterval) {
+        clearInterval(autoPlayInterval);
+        autoPlayInterval = null;
+    }
+    document.getElementById('autoPlay').style.display = 'inline-block';
+    document.getElementById('stopPlay').style.display = 'none';
+}
+
+// Event listeners for step controls
+document.getElementById('nextStep').addEventListener('click', goToNextStep);
+document.getElementById('prevStep').addEventListener('click', goToPrevStep);
+document.getElementById('autoPlay').addEventListener('click', startAutoPlay);
+document.getElementById('stopPlay').addEventListener('click', stopAutoPlay);
+
+// Event listeners for Arduino controls
+document.getElementById('connectArduino').addEventListener('click', async function() {
+    const portSelect = document.getElementById('portSelect');
+    const port = portSelect.value || null;
+    
+    try {
+        const response = await fetch('/arduino/connect', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({port: port})
+        });
+        
+        const result = await response.json();
+        alert(result.message);
+        await updateArduinoStatus();
+    } catch (error) {
+        alert('Connection failed: ' + error.message);
+    }
+});
+
+document.getElementById('disconnectArduino').addEventListener('click', async function() {
+    try {
+        const response = await fetch('/arduino/disconnect', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+        await updateArduinoStatus();
+    } catch (error) {
+        alert('Disconnect failed: ' + error.message);
+    }
+});
+
+document.getElementById('testArduino').addEventListener('click', async function() {
+    try {
+        const response = await fetch('/arduino/test', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (error) {
+        alert('Test failed: ' + error.message);
+    }
+});
+
+document.getElementById('refreshPorts').addEventListener('click', refreshPortList);
+
+// Cube controls
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  faces=JSON.parse(JSON.stringify(defaultFaces)); 
+  renderCube();
+  solutionText.textContent='Cube reset. No solution generated yet.'; 
+  stepList.style.display = 'none';
+  ledControls.style.display = 'none';
+  progressInfo.style.display = 'none';
+  cubeStringEl.textContent='[not generated]'; 
+  statusEl.textContent='';
+  stopAutoPlay();
+  currentStep = -1;
+  currentMoves = [];
+});
+
+document.getElementById('generateString').addEventListener('click',()=>{
+  const s=generateCubeString();
+  solutionText.textContent=`Cube string generated. Click "Solve Cube" to get solution.`;
+  stepList.style.display = 'none';
+  ledControls.style.display = 'none';
+  progressInfo.style.display = 'none';
+  statusEl.textContent = `String: ${s}`;
+  stopAutoPlay();
+});
+
+document.getElementById('solveBtn').addEventListener('click',async function(){
+  const btn = this;
+  const originalText = btn.textContent;
+  const sendToArduino = document.getElementById('autoSendToArduino').checked;
+  
+  btn.disabled = true;
+  btn.textContent = 'Solving...';
+  statusEl.textContent = 'Requesting solution from server...';
+  stepList.style.display = 'none';
+  ledControls.style.display = 'none';
+  progressInfo.style.display = 'none';
+  stopAutoPlay();
+  
+  generateCubeString();
+  
+  try {
+    const response = await fetch('/solve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        faces: faces,
+        send_to_arduino: sendToArduino
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.error) {
+      solutionText.textContent = 'Error: ' + result.error;
+      statusEl.textContent = 'Solution failed';
+    } else {
+      currentMoves = result.solution.split(' ');
+      currentStep = -1;
+      const moveCount = currentMoves.length;
+      
+      // Display solution in both notations
+      solutionText.innerHTML = `
+        <div class="solution-output">
+          <div><span class="move-count">${moveCount} moves</span> required</div>
+          <div class="solution-moves">${result.solution}</div>
+        </div>
+      `;
+      
+      // Display steps in simple English
+      stepList.innerHTML = '<h4>Step-by-Step Instructions:</h4>';
+      currentMoves.forEach((move, index) => {
+        const stepItem = document.createElement('div');
+        stepItem.className = 'step-item';
+        stepItem.innerHTML = `
+          <span class="step-number">${index + 1}.</span>
+          <span class="step-description">${moveToEnglish(move)}</span>
+        `;
+        stepList.appendChild(stepItem);
+      });
+      stepList.style.display = 'block';
+      
+      // Show LED controls
+      ledControls.style.display = 'flex';
+      progressInfo.style.display = 'block';
+      updateStepDisplay();
+      
+      let statusMessage = `Solved using ${result.solver_used || 'kociemba'} algorithm`;
+      if (result.arduino_sent) {
+        statusMessage += ` | Arduino: ${result.arduino_message}`
+      }
+      statusEl.textContent = statusMessage;
+    }
+  } catch (error) {
+    solutionText.textContent = 'Network error: ' + error.message;
+    statusEl.textContent = 'Request failed';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
+// Initialize the application
+function initApp() {
+  renderCube();
+  updateArduinoStatus();
+  refreshPortList();
+  
+  // Set up periodic status updates
+  setInterval(updateArduinoStatus, 5000);
+}
+
+// Start the application when page loads
+window.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>
